@@ -484,53 +484,154 @@ write_csv(data, file.path(out_dir, 'concatenated_all.csv'))
 
 
 ########################################################################
-# Calculate index of ambiguity aversion
+# Calculate ambiguity aversion
 ########################################################################
+library(AlgDesign)
+library(readr)
+
+# Load data
 concatenated_all <- read_csv("analysis/concatenated_all.csv")
 data <- concatenated_all
 
-# Function to calculate bSo (index of ambiguity aversion)
-calculate_bSo <- function(data) {
-  # Initialize a vector to store the calculated bSo values
-  bSo_values <- numeric(length(data$subject))
+# Initialize variables
+initialize_variables <- function(data) {
+  # Initialize matrices to store indexes
+  AA_0.1 <- numeric(length(data$subject))
+  AA_0.5 <- numeric(length(data$subject))
+  AA_0.9 <- numeric(length(data$subject))
+  ambiguity_aversion <- numeric(length(data$subject))
+  a_insensitivity <- numeric(length(data$subject))
   
-  # Loop through each row of the data (each subject)
-  for (i in 1:nrow(data)) {
-    # Create a matrix of probability levels (p) for fitting the regression line
-    p <- c(0.1, 0.5, 0.9)
-    
-    # Create a matrix of matching probabilities (m(p)) for the current subject
-    mp <- c(data$m10[i], data$m50[i], data$m90[i])
-    
-    # Fit a linear regression between m(p) and p
-    lin_fit <- lm(mp ~ p)
-    
-    # Extract the coefficients from the fitted linear regression
-    c <- coef(lin_fit)[1]  # Intercept
-    s <- coef(lin_fit)[2]  # Slope
-    
-    # Calculate the index of ambiguity aversion (bSo)
-    bSo <- 1 - s - 2 * c
-    
-    # Store the calculated bSo value in the vector
-    bSo_values[i] <- bSo
-  }
-  
-  # Return the vector of bSo values
-  return(bSo_values)
+  return(list(AA_0.1 = AA_0.1, AA_0.5 = AA_0.5, AA_0.9 = AA_0.9, ambiguity_aversion = ambiguity_aversion, a_insensitivity = a_insensitivity))
 }
 
-# Apply the calculate_bSo function to the data and store the results in aa_index
-aa_index <- calculate_bSo(data)
+# Test initialize_variables function
+initial_values <- initialize_variables(data)
+print(head(initial_values$AA_0.1))
+print(head(initial_values$AA_0.5))
+print(head(initial_values$AA_0.9))
+print(head(initial_values$ambiguity_aversion))
+print(head(initial_values$a_insensitivity))
 
-# Add bSo values (i.e., aa_index) as a new column in data
-data$aa_index <- aa_index
+# Calculate scaled matching probabilities
+calculate_scaled_probabilities <- function(data) {
+  scaled_m10 <- vector("list", length(data$subject))
+  scaled_m50 <- vector("list", length(data$subject))
+  scaled_m90 <- vector("list", length(data$subject))
+  
+  for (i in 1:nrow(data)) {
+    mp <- c(data$m10[i], data$m50[i], data$m90[i]) / 100  # Scaling to [0, 1]
+    mp <- na.omit(mp)  # Remove NA values
+    
+    scaled_m10[[i]] <- ifelse(length(mp) >= 1, mp[1], NA)
+    scaled_m50[[i]] <- ifelse(length(mp) >= 2, mp[2], NA)
+    scaled_m90[[i]] <- ifelse(length(mp) >= 3, mp[3], NA)
+  }
+  
+  data$scaled_m10 <- unlist(scaled_m10)
+  data$scaled_m50 <- unlist(scaled_m50)
+  data$scaled_m90 <- unlist(scaled_m90)
+  
+  return(data)
+}
 
-# Print and plot results
-subset_data <- data[, c('subject', 'm10', 'm50', 'm90', 'aa_index')]
-head(subset_data)
-summary(data$aa_index)
-hist(data$aa_index)
+# Test calculate_scaled_probabilities function
+data_with_scaled_probabilities <- calculate_scaled_probabilities(data)
+print(head(data_with_scaled_probabilities$scaled_m10))
+print(head(data_with_scaled_probabilities$scaled_m50))
+print(head(data_with_scaled_probabilities$scaled_m90))
+
+# Calculate ambiguity aversion indexes
+calculate_AA_indexes <- function(data) {
+  # Initialize AA indexes columns
+  data$AA_0.1 <- numeric(nrow(data))
+  data$AA_0.5 <- numeric(nrow(data))
+  data$AA_0.9 <- numeric(nrow(data))
+  
+  for (i in 1:nrow(data)) {
+    mp <- c(data$m10[i], data$m50[i], data$m90[i]) / 100  # Scaling to [0, 1]
+    mp <- na.omit(mp)  # Remove NA values
+    
+    # Calculate AA indexes
+    data$AA_0.1[i] <- 0.1 - mp[1]
+    data$AA_0.5[i] <- 0.5 - mp[2]
+    data$AA_0.9[i] <- 0.9 - mp[3]
+  }
+  
+  return(data)
+}
+
+# Test calculate_AA_indexes function
+data_with_AA_indexes <- calculate_AA_indexes(data)
+print(head(data_with_AA_indexes$AA_0.1))
+print(head(data_with_AA_indexes$AA_0.5))
+print(head(data_with_AA_indexes$AA_0.9))
+
+# Calculate ambiguity aversion
+calculate_ambiguity_aversion <- function(data) {
+  for (i in 1:nrow(data)) {
+    mp <- c(data$m10[i], data$m50[i], data$m90[i]) / 100  # Scaling to [0, 1]
+    mp <- na.omit(mp)  # Remove NA values
+    
+    lin_fit <- lm(mp ~ I(c(0.1, 0.5, 0.9)), data = data.frame(p = c(0.1, 0.5, 0.9), mp = mp), na.action = na.exclude)
+    c_coef <- coef(lin_fit)[1]  # Intercept
+    s_coef <- coef(lin_fit)[2]  # Slope
+    data$ambiguity_aversion[i] <- 1 - s_coef - 2 * c_coef
+  }
+  
+  return(data)
+}
+
+# Test calculate_ambiguity_aversion function
+data_with_ambiguity_aversion <- calculate_ambiguity_aversion(data)
+print(head(data_with_ambiguity_aversion$ambiguity_aversion))
+
+# Calculate a-insensitivity
+calculate_a_insensitivity <- function(data) {
+  for (i in 1:nrow(data)) {
+    mp <- c(data$m10[i], data$m50[i], data$m90[i]) / 100  # Scaling to [0, 1]
+    mp <- na.omit(mp)  # Remove NA values
+    
+    quad_fit <- lm(mp ~ poly(c(0.1, 0.5, 0.9), 2), data = data.frame(p = c(0.1, 0.5, 0.9), mp = mp), na.action = na.exclude)
+    s_quad <- coef(quad_fit)[2]  # Slope
+    data$a_insensitivity[i] <- 1 - s_quad
+  }
+  
+  return(data)
+}
+
+# Test calculate_a_insensitivity function
+data_with_a_insensitivity <- calculate_a_insensitivity(data)
+print(head(data_with_a_insensitivity$a_insensitivity))
+
+# Apply the functions to the data
+data <- calculate_scaled_probabilities(data)
+data <- calculate_AA_indexes(data)
+data <- calculate_ambiguity_aversion(data)
+data <- calculate_a_insensitivity(data)
+
+# Save 
+write_csv(data, file.path('analysis/concatenated_all.csv'))
+
+# Columns to summarize
+ambiguity_columns <- c("scaled_m10", "scaled_m50", "scaled_m90", "aa_0.1", "aa_0.5", "aa_0.9", "ambiguity_aversion", "a_insensitivity")
+
+# Initialize an empty dataframe to store summary statistics
+summary_df <- data.frame(Variable = character(length(ambiguity_columns)), Mean = numeric(length(ambiguity_columns)), Median = numeric(length(ambiguity_columns)), SD = numeric(length(ambiguity_columns)), Min = numeric(length(ambiguity_columns)), Max = numeric(length(ambiguity_columns)))
+
+# Loop through each column
+for (i in seq_along(ambiguity_columns)) {
+  column <- ambiguity_columns[i]
+  summary_df[i, "Variable"] <- column
+  summary_df[i, c("Mean", "Median", "SD", "Min", "Max")] <- c(
+    round(mean(data[[column]], na.rm = TRUE), 2),
+    round(median(data[[column]], na.rm = TRUE), 2),
+    round(sd(data[[column]], na.rm = TRUE), 2),
+    round(min(data[[column]], na.rm = TRUE), 2),
+    round(max(data[[column]], na.rm = TRUE), 2)
+  )
+}
 
 # Save
-write_csv(data, file.path('analysis/concatenated_all.csv'))
+write_csv(summary_df, file.path('analysis/ambiguity_attitude_indexes_stats.csv'))
+
