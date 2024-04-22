@@ -92,7 +92,7 @@ for (column in columns_categorical) {
 # Violin, box, and scatterplots for continuous variables
 ########################################################################
 columns_continuous <- c("SPS_positive", "SPS_negative", "SPS_sum",
-                        "aa_index", # ambiguity aversion index
+                        "ambiguity_aversion",
                         "tg_sent", # trust
                         "tg_return_sum", # trustworthiness
                         "riskaversion", "prudence", 
@@ -171,26 +171,15 @@ write.csv(summary_df, file = "analysis/summary_statistics.csv", row.names = FALS
 
 
 ########################################################################
-# Remove outliers: plot scatterplots, check points far from main cluster
+# No removed outliers
 ########################################################################
-# variables to be used in SEM: SPS_positive, SPS_negative, aa_index, tg_sent, tg_return_sum, riskaversion, prudence, patience_outcome
-# covariates: sex, BIG_neuroticism_sum, age, BIG_openness_sum
-# variables with outliers: SPS_positive, aa_index, tg_return_sum
-# variables with non-normal distributions: tg_sent (bimodal), tg_return_sum, riskaversion (bimodal, mostly negative skewed), prudence (negative skewed), patience_outcome (negative skewed)
-
-data <- concatenated_all
-data has the columns SPS_positive, SPS_negative, aa_index, tg_sent, tg_return_sum, riskaversion, prudence, patience_outcome, age, sex, and BIG_neuroticism_sum, BIG_openness_sum
-variables with non-normal distributions: tg_sent (bimodal), tg_return_sum, riskaversion (bimodal, mostly negative skewed), prudence (negative skewed), patience_outcome (negative skewed)
-
+# Variables are all within a certain range or even ordinal such that excluding outliers would be arbitrary
 
 ########################################################################
-# Transformation
+# No transformations
 ########################################################################
-# Descending the ladders of power (e.g., log) corrects for positive skew, while ascending (e.g., squared, cubed) corrects for negative skew 
+# Using non-parametric methods or robust SEM techniques such as bootstrapping or permutation tests do not rely on assumptions about the distribution of the data and can be more robust to violations of normality. Robust SEM techniques that are designed to handle violations of distributional assumptions: diagonally weighted least squares (DWLS) estimator or the robust maximum likelihood estimator (MLR)
 
-# Should I even transform the non-normally distributed variables? 
-## Could be appropriate if the bimodality is meaningful and reflects genuine characteristics of the data
-## Using non-parametric methods or robust SEM techniques such as bootstrapping or permutation tests do not rely on assumptions about the distribution of the data and can be more robust to violations of normality. Robust SEM techniques that are designed to handle violations of distributional assumptions: diagonally weighted least squares (DWLS) estimator or the robust maximum likelihood estimator (MLR)
 
 ########################################################################
 # Standardization: z-score across all variables
@@ -245,7 +234,7 @@ data <- as.data.table(concatenated_all_z)
 names(data)
 
 # Rename columns
-setnames(data, old = c('SPS_sum', 'SPS_positive', 'SPS_negative', 'aa_index', 'tg_sent', 'tg_return_sum', 'riskaversion', 'prudence', 'patience_outcome', 'sex', 'age', 'BIG_neuroticism_sum', 'BIG_openness_sum'), 
+setnames(data, old = c('SPS_sum', 'SPS_positive', 'SPS_negative', 'ambiguity_aversion', 'tg_sent', 'tg_return_sum', 'riskaversion', 'prudence', 'patience_outcome', 'sex', 'age', 'BIG_neuroticism_sum', 'BIG_openness_sum'), 
          new = c('SPS sum', 'SPS positive dimension', 'SPS negative dimension', 'ambiguity aversion index', 'trust', 'trustworthiness', 'risk aversion', 'prudence', 'patience', 'sex (M-, F+)', 'age', 'neuroticism', 'openness')) 
 names(data)
 
@@ -260,7 +249,7 @@ names(data_subset)
 data_subset_matrix <- as.matrix(data_subset)
 
 # Compute correlation matrix between selected variables
-cor.mat <- cor(data_subset_matrix, method = "pearson", use = "pairwise.complete.obs")
+cor.mat <- cor(data_subset_matrix, method = "spearman", use = "pairwise.complete.obs")
 
 # Compute p-values for correlation matrix
 p.mat <- rcorr(as.matrix(data_subset_matrix))$P
@@ -274,7 +263,7 @@ pi <- ggcorrplot(cor.mat,
                  digits = 2,
                  colors = c("#0048A0","#ffffff","#C10000"), # order: low, middle, high
                  tl.col = "#000000",
-                 legend.title = "Pearson\ncorrelation",
+                 legend.title = "Spearman\ncorrelation",
                  hc.order = FALSE,
                  theme(legend.key.width = unit(2.5, 'cm'),
                        legend.position = "bottom"))
@@ -288,7 +277,7 @@ p1 <- ggcorrplot(cor.mat,
                  digits = 2,
                  colors = c("#0048A0","#ffffff","#C10000"), # order: low, middle, high
                  tl.col = "#000000",
-                 legend.title = "Pearson\ncorrelation",
+                 legend.title = "Spearman\ncorrelation",
                  hc.order = FALSE,
                  lab_size = 3) 
 
@@ -370,7 +359,7 @@ p2 <- ggraph(tg, layout = 'stress', circular = FALSE) +
   guides(edge_width = 'none',
          edge_alpha = 'none') +
   scale_edge_colour_gradient2(
-    'Pearson r',
+    'Spearman r',
     low = "#0048A0",
     mid = "#ffffff",
     high = "#C10000",
