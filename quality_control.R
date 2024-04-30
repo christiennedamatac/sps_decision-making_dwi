@@ -138,6 +138,7 @@ ggsave("plots/qc_plots.pdf", combined_plot, width = 11, height = 11)
 ########################################################################
 # Print summary stats
 ########################################################################
+data <- concatenated_all
 # Create an empty data frame to store summary statistics
 summary_df <- data.frame(Column = character(),
                          Min = numeric(),
@@ -175,10 +176,11 @@ write.csv(summary_df, file = "analysis/summary_statistics.csv", row.names = FALS
 ########################################################################
 # Variables are all within a certain range or even ordinal such that excluding outliers would be arbitrary
 
+
 ########################################################################
 # No transformations
 ########################################################################
-# Using non-parametric methods or robust SEM techniques such as bootstrapping or permutation tests do not rely on assumptions about the distribution of the data and can be more robust to violations of normality. Robust SEM techniques that are designed to handle violations of distributional assumptions: diagonally weighted least squares (DWLS) estimator or the robust maximum likelihood estimator (MLR)
+# Using non-parametric methods or robust SEM techniques such as bootstrapping or permutation tests do not rely on assumptions about the distribution of the data and can be more robust to violations of normality. 
 
 
 ########################################################################
@@ -250,9 +252,13 @@ data_subset_matrix <- as.matrix(data_subset)
 
 # Compute correlation matrix between selected variables
 cor.mat <- cor(data_subset_matrix, method = "spearman", use = "pairwise.complete.obs")
+# Save
+write.csv(cor.mat, "analysis/cor_mat.csv", row.names = TRUE)
 
 # Compute p-values for correlation matrix
 p.mat <- rcorr(as.matrix(data_subset_matrix))$P
+# Save
+write.csv(p.mat, "analysis/p_mat.csv", row.names = TRUE)
 
 # Create correlation plot
 pi <- ggcorrplot(cor.mat, 
@@ -290,28 +296,53 @@ p1 <- p1 + theme(legend.position="none")
 ########################################################################
 # Network analysis 
 ########################################################################
-cor_mat <- as.data.table(cor.mat)
-p_mat <- as.data.table(p.mat)
+library(readr)
+
+# Read the CSV file into a tibble
+cor_mat <- read_csv("analysis/cor_mat.csv")
+# Convert the tibble to a data frame
+cor_mat <- as.data.frame(cor_mat)
+# Set row names from the first column
+rownames(cor_mat) <- cor_mat[[1]]
+# Remove the first column
+cor_mat <- cor_mat[, -1, drop = FALSE]
+# Remove the row named 'SPS sum'
+cor_mat <- cor_mat[!rownames(cor_mat) %in% "SPS sum", , drop = FALSE]
+# Remove the column named 'SPS sum'
+cor_mat <- cor_mat[, !colnames(cor_mat) %in% "SPS sum", drop = FALSE]
+
+p_mat <- read_csv("analysis/p_mat.csv")
+p_mat <- as.data.frame(p_mat)
+rownames(p_mat) <- p_mat[[1]]
+p_mat <- p_mat[, -1, drop = FALSE]
+p_mat <- p_mat[!rownames(p_mat) %in% "SPS sum", , drop = FALSE]
+p_mat <- p_mat[, !colnames(p_mat) %in% "SPS sum", drop = FALSE]
+
 
 # Vertices (or nodes): name of each variable
-va <- names(cor.mat)
+va <- names(cor_mat[,c(1:12)])
 
 # Edges: correlation value (r) and significance (p)
-## melt data
-id.vars <- names(cor.mat[,c(1)])
-measure.vars <- names(cor.mat[,c(1:13)])
+## Melt data
+cor_mat$id.vars <- rownames(cor_mat)
+p_mat$id.vars <- rownames(p_mat)
 
-cor_melt <- melt(cor.mat, id.vars=c(id.vars), measure.vars=c(measure.vars))
+id.vars <- names(cor_mat[,c(13)])
+measure.vars <- names(cor_mat[,c(1:12)])
+
+cor_mat <- as.data.table(cor_mat)
+p_mat <- as.data.table(p_mat)
+
+cor_melt <- melt(cor_mat, id.vars=c(id.vars), measure.vars=c(measure.vars))
 head(cor_melt)
 
-## melt p-values
-p_melt <- melt(p.mat, id.vars=c(id.vars), measure.vars=c(measure.vars))
+p_melt <- melt(p_mat, id.vars=c(id.vars), measure.vars=c(measure.vars))
 head(p_melt)
 
-# merge vertices and edges together 
-ed <- merge(cor_melt, p_melt[,c("Var1","Var2","value")], by=c("Var1","Var2"), all=TRUE) # merge correlations and p-values
+# Merge vertices and edges together 
+ed <- merge(cor_melt, p_melt[,c("id.vars","variable","value")], by=c("id.vars","variable"), all=TRUE) # merge correlations and p-values
 head(ed)
-colnames(ed) <- c('rowname','variable','r','p') # rename
+colnames(ed) <- c('node_a','node_b','r','p') # rename
 
 ## delete nonsignificant correlations
 ed_sig <- ed[!(ed$p > 0.05),]
@@ -322,18 +353,21 @@ ig <- igraph::graph_from_data_frame(d=ed_sig, vertices=va, directed = FALSE)
 # add labels to nodes
 tg <- tidygraph::as_tbl_graph(ig) %>% # graph object
   tidygraph::activate(nodes) %>% 
-  dplyr::mutate(label=c('SPS\nsum','SPS\nsum', 'SPS\npositive\ndimension', 'SPS\nnegative\ndimension', 'ambiguity\naversion\nindex', 'trust', 'trustworthiness', 'risk\naversion', 'prudence', 'patience', 'sex\n(M-, F+)', 'age', 'neuroticism', 'openness'))
+  dplyr::mutate(label=c('SPS\npositive\ndimension', 'SPS\nnegative\ndimension', 'ambiguity\naversion\nindex', 'trust', 'trustworthiness', 'risk\naversion', 'prudence', 'patience', 'sex\n(M-, F+)', 'age', 'neuroticism', 'openness'))
 
-# add questionnaire membership for each vertex 
-#V(tg)$questionnaire <- subscale_totals$questionnaire
+# Print nodes data frame and grouping variable vector; make sure they match
+print(as_tibble(tg))
+# Add the grouping variable to the nodes data frame
+tg <- tg %>% 
+  mutate(group_variable = c(1, 1, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3))  
 
 tg #tidygraph object with node and edge data
 
-# Calculate degree centrality of this undirected network
+# Calculate degree centrality 
 degree.cent <- centr_degree(tg, mode = "all")
 degree.cent$res
 
-# Calculate closeness centrality
+# Calculate closeness centrality: degree of closeness or proximity of a node to all other nodes in a network
 closeness.cent <- closeness(tg, mode="all")
 closeness.cent
 
@@ -345,11 +379,12 @@ p2 <- ggraph(tg, layout = 'stress', circular = FALSE) +
   geom_edge_arc(lineend = 'butt', linejoin = 'round', 
                 linemitre = 2, 
                 strength = 0,
-                edge_width = 0.5,
+                edge_width = 1,
                 aes(colour = r)) +
   geom_node_point(size = 7,
-                  alpha = 0.6) +
-  geom_node_text(aes(label = name), 
+                  alpha = 0.6,
+                  aes(colour = factor(group_variable))) + 
+  geom_node_text(aes(label = label), 
                  repel = TRUE, 
                  point.padding = unit(2, "lines"), 
                  size=4, 
@@ -368,9 +403,13 @@ p2 <- ggraph(tg, layout = 'stress', circular = FALSE) +
     na.value = "#000000",
     guide = "edge_colourbar",
     aesthetics = "edge_colour",
-    limits = c(-1, 1)
-  )
+    limits = c(-1, 1)) +
+  scale_color_manual(name = "Variable group", 
+                     breaks = c(1, 2, 3),  # Specify breaks to match levels of group_variable
+                     labels = c("SPS", "Decision-making", "Covariate"),  # Add labels for each level
+                     values = c("purple", "darkorange", "darkgreen"))  # Add colors for each level
 
+  
 # Arrange plot and legend vertically
 combined_plot <- grid.arrange(p1, legend, p2,
                               ncol = 1, nrow=3,
